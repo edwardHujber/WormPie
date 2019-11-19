@@ -440,7 +440,7 @@ class ImageSaver():
                     waiting = False
         while not self.outputs[1]:
             pass
-        self.save_image_from_stream_yuv(self.queue[i], i + 1)
+        self.save_image_from_stream_yuv(self.queue[i], i + 1, need_serial)
         self.queue[i] = None
         self.saving = False
 
