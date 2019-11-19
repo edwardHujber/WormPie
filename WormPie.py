@@ -18,7 +18,7 @@ from tkinter import filedialog, messagebox
 import traceback
 
 
-VERSION = '1.1.11'
+VERSION = '1.1.12'
 
 '''
 TO DO:
@@ -44,6 +44,7 @@ class Application(tk.Frame):
         self.cam_resolution = (width, height)
         self.cam_exposure_mode = 'auto'
         self.master = master
+        self.CWD = os.getcwd()
         self.grid()
         self.configure(background=self.bkg)
         self.master.configure(background=self.bkg)
@@ -90,7 +91,7 @@ class Application(tk.Frame):
         self.save_settings_button.grid(row=0, column=1, pady=5, padx=10)
 
         row = 1
-        self.image_directory = Directory(designer_frame, 'Destination directory: ', bkg=self.bkg)
+        self.image_directory = Directory(designer_frame, self.CWD, 'Destination directory: ', bkg=self.bkg)
         self.image_directory.grid(row=row, column=0)
         self.input_fields.append(self.image_directory)
 
@@ -152,7 +153,7 @@ class Application(tk.Frame):
 
     def load_expmt(self):
         config = configparser.ConfigParser(interpolation=None)
-        filename = filedialog.askopenfilename(title="Select file", filetypes=[("config file", ".ini")], initialdir='/home/pi/Desktop/')
+        filename = filedialog.askopenfilename(title="Select file", filetypes=[("config file", ".ini")], initialdir=self.CWD)
         if filename != '':
             config.read(filename)
             try:
@@ -188,7 +189,7 @@ class Application(tk.Frame):
                                 'file_prefix': self.file_prefix.get_as_str(),
                                 'time_format': self.time_format.get_as_str(),
                                 'light_off': self.light_off.get_as_str()}
-        filename = filedialog.asksaveasfilename(title="Select file", filetypes=[("config file", ".ini")], initialdir='/home/pi/Desktop/')
+        filename = filedialog.asksaveasfilename(title="Select file", filetypes=[("config file", ".ini")], initialdir=self.CWD)
         if not filename.endswith('.ini'):
             filename = filename + '.ini'
         with open(filename, 'w') as configfile:
@@ -428,12 +429,13 @@ class ImageSaver():
 
     def start(self):
         self.saving = True
+        need_serial = len(self.queue) > 1
         i = 0
         for i in range(1, len(self.queue)):
             waiting = True
             while waiting:
                 if self.queue[i].tell() > 0:
-                    self.save_image_from_stream_yuv(self.queue[i - 1], i)
+                    self.save_image_from_stream_yuv(self.queue[i - 1], i, need_serial)
                     self.queue[i - 1] = None
                     waiting = False
         while not self.outputs[1]:
@@ -442,18 +444,22 @@ class ImageSaver():
         self.queue[i] = None
         self.saving = False
 
-    def save_image_from_stream_jpeg(self, stream_item, i):
-        stream_item.seek(0)
-        image = Image.open(stream_item)
-        fname = self.name_base + str(i - 1) + self.img_type
-        image.save(fname)
-        stream_item.close()
+    # def save_image_from_stream_jpeg(self, stream_item, i):
+    #     stream_item.seek(0)
+    #     image = Image.open(stream_item)
+    #     fname = self.name_base + str(i - 1) + self.img_type
+    #     image.save(fname)
+    #     stream_item.close()
 
-    def save_image_from_stream_yuv(self, stream_item, i):
+    def save_image_from_stream_yuv(self, stream_item, i, need_serial):
         stream_item.seek(0)
         Y = np.fromstring(stream_item.getvalue(), dtype=np.uint8, count=self.fwidth * self.fheight).reshape((self.fheight, self.fwidth))
         image = Image.fromarray(Y)
-        fname = self.name_base + str(i - 1) + self.img_type
+        if need_serial:
+            serial = str(i - 1)
+        else:
+            serial = ''
+        fname = self.name_base + serial + self.img_type
         image.save(fname)
         stream_item.close()
 
@@ -738,12 +744,13 @@ class Directory(tk.Frame, WormPieVar):
     '''
     Select a directory. Has function to enforce no-spaces (or whatver) but this is inactive right now
     '''
-    def __init__(self, parent, label, default='', bkg=None):
+    def __init__(self, parent, CWD, label, default='', bkg=None):
         tk.Frame.__init__(self, parent)
         self.configure(background=bkg)
 
         self.dir = tk.StringVar(self)
         self.dir.set(default)
+        self.CWD = CWD
 
         self.dir_label = tk.Label(self, text=label, pady=WormPieVar.label_height)
         self.entry = tk.Entry(self, textvariable=self.dir, width=50)
@@ -760,7 +767,11 @@ class Directory(tk.Frame, WormPieVar):
         self.bkg = bkg
 
     def choose_directory(self):
-        directory = filedialog.askdirectory(initialdir='/home/pi/Desktop/')
+        if self.dir.get() == '':
+            dest_dir = self.CWD
+        else:
+            dest_dir = self.dir.get()
+        directory = filedialog.askdirectory(initialdir=dest_dir)
         if directory != '':
             self.dir.set(directory)
 
@@ -784,4 +795,3 @@ if __name__ == '__main__':
     app = Application(master=root)
     app.mainloop()
     GPIO.cleanup()
-
